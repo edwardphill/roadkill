@@ -1,12 +1,36 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { createReport, type ActionState } from "@/app/actions";
+import { useRouter } from "next/navigation";
+import { useState, type FormEvent } from "react";
+import { z } from "zod";
+import { useAuth } from "@/components/Auth";
 import { GuidanceCard } from "@/components/GuidanceCard";
-import { evaluate, STATES } from "@/lib/regs";
+import { evaluate, getState, REGS_VERSION, STATES } from "@/lib/regs";
 import { findSpecies, SPECIES } from "@/lib/species";
+import { createReport } from "@/lib/store";
 
 const input = "w-full rounded border border-zinc-300 bg-transparent px-3 py-2 dark:border-zinc-700";
+
+const reportSchema = z.object({
+  lat: z.coerce.number().min(-90).max(90),
+  lng: z.coerce.number().min(-180).max(180),
+  accuracyM: z.coerce.number().int().nonnegative().optional(),
+  stateCode: z.string().length(2),
+  roadName: z.string().max(200).optional(),
+  species: z.string(),
+  sex: z.enum(["male", "female", "unknown"]).default("unknown"),
+  ageClass: z.enum(["adult", "juvenile", "unknown"]).default("unknown"),
+  condition: z.enum(["fresh", "bloated", "decomposed", "unknown"]).default("unknown"),
+  // datetime-local is read in the browser's own timezone, which is what the reporter meant.
+  observedAtLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/),
+  reporterHandle: z.string().max(60).optional(),
+  notes: z.string().max(1000).optional(),
+});
+
+function formObject(formData: FormData) {
+  // Empty inputs come through as "", which should mean "not provided".
+  return Object.fromEntries([...formData.entries()].filter(([, v]) => v !== ""));
+}
 
 function nowLocal() {
   const d = new Date();
@@ -15,16 +39,52 @@ function nowLocal() {
 }
 
 export function ReportForm() {
-  const [state, action, pending] = useActionState<ActionState, FormData>(createReport, {});
+  const router = useRouter();
+  const { user, name } = useAuth();
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
   const [stateCode, setStateCode] = useState("");
   const [speciesId, setSpeciesId] = useState("");
   const [coords, setCoords] = useState<{ lat: string; lng: string; acc: string }>({ lat: "", lng: "", acc: "" });
   const [locError, setLocError] = useState("");
   const [observedAt] = useState(nowLocal);
-  const [tzOffset] = useState(() => new Date().getTimezoneOffset());
 
   const species = findSpecies(speciesId);
   const guidance = stateCode && species ? evaluate(stateCode, species.category) : null;
+
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError("");
+    const parsed = reportSchema.safeParse(formObject(new FormData(e.currentTarget)));
+    if (!parsed.success) return setError(parsed.error.issues.map((i) => `${i.path}: ${i.message}`).join("; "));
+    const { observedAtLocal, ...input } = parsed.data;
+    const sp = findSpecies(input.species);
+    if (!sp) return setError("Unknown species");
+    if (!getState(input.stateCode)) return setError("Unknown state");
+
+    setPending(true);
+    try {
+      const id = await createReport(
+        {
+          ...input,
+          observedAt: new Date(observedAtLocal),
+          stateCode: input.stateCode.toUpperCase(),
+          speciesCategory: sp.category,
+          eligibility: evaluate(input.stateCode, sp.category).eligibility,
+          regsVersion: REGS_VERSION,
+          accuracyM: input.accuracyM ?? null,
+          roadName: input.roadName ?? null,
+          reporterHandle: input.reporterHandle ?? null,
+          notes: input.notes ?? null,
+        },
+        user?.id ?? null,
+      );
+      router.push(`/reports/?id=${id}`);
+    } catch (err) {
+      setError((err as Error).message);
+      setPending(false);
+    }
+  }
 
   function locate() {
     setLocError("");
@@ -41,7 +101,7 @@ export function ReportForm() {
   }
 
   return (
-    <form action={action} className="space-y-4">
+    <form onSubmit={submit} className="space-y-4">
       <fieldset className="space-y-2">
         <legend className="font-medium">Where</legend>
         <button type="button" onClick={locate} className="rounded bg-zinc-900 px-3 py-2 text-white dark:bg-zinc-100 dark:text-black">
@@ -96,17 +156,16 @@ export function ReportForm() {
           Seen at
           <input className={input} type="datetime-local" name="observedAtLocal" defaultValue={observedAt} required />
         </label>
-        <input type="hidden" name="tzOffset" value={tzOffset} />
       </fieldset>
 
       {guidance && <GuidanceCard guidance={guidance} />}
 
       <fieldset className="space-y-2">
-        <input className={input} name="reporterHandle" placeholder="Your name or handle (optional)" />
+        <input className={input} name="reporterHandle" defaultValue={name} placeholder="Your name or handle (optional)" />
         <textarea className={input} name="notes" rows={3} placeholder="Notes (optional)" />
       </fieldset>
 
-      {state.error && <p className="text-sm text-red-600">{state.error}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
       <button disabled={pending} className="w-full rounded bg-orange-600 px-4 py-3 font-semibold text-white disabled:opacity-50">
         {pending ? "Saving…" : "Log this animal"}
       </button>

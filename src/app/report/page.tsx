@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { RequireSignIn } from "@/components/Auth";
 import { ReportForm } from "./ReportForm";
 
 export default function NewReportPage() {
@@ -8,10 +8,9 @@ export default function NewReportPage() {
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
         Every report counts, whether or not you pick it up. Pick the state and species to see if salvage is allowed.
       </p>
-      {/* The form defaults "seen at" to the visitor's current time, so it renders per request. */}
-      <Suspense fallback={<p className="text-zinc-500">Loading…</p>}>
+      <RequireSignIn action="log an animal">
         <ReportForm />
-      </Suspense>
+      </RequireSignIn>
     </div>
   );
 }

@@ -1,22 +1,25 @@
-import { desc, sql } from "drizzle-orm";
-import Link from "next/link";
-import { connection } from "next/server";
-import { Suspense } from "react";
-import { db, schema } from "@/db";
-import { fmtDate, speciesLabel, STATUS_LABEL } from "@/lib/format";
+"use client";
 
-async function RecentReports() {
-  await connection();
-  const [rows, [totals]] = await Promise.all([
-    db.select().from(schema.reports).orderBy(desc(schema.reports.observedAt)).limit(50),
-    db
-      .select({
-        reports: sql<number>`count(*)::int`,
-        states: sql<number>`count(distinct ${schema.reports.stateCode})::int`,
-        salvaged: sql<number>`count(*) filter (where ${schema.reports.status} = 'salvaged')::int`,
-      })
-      .from(schema.reports),
-  ]);
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { downloadCsv } from "@/lib/csv";
+import { fmtDate, speciesLabel, STATUS_LABEL } from "@/lib/format";
+import { getStats, listReports } from "@/lib/store";
+import type { Report, Stats } from "@/lib/types";
+
+function RecentReports() {
+  const [data, setData] = useState<{ rows: Report[]; totals: Stats } | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    Promise.all([listReports(50), getStats()])
+      .then(([rows, totals]) => setData({ rows, totals }))
+      .catch((e: Error) => setError(e.message));
+  }, []);
+
+  if (error) return <p className="text-red-600">Couldn&apos;t load reports: {error}</p>;
+  if (!data) return <p className="text-zinc-500">Loading…</p>;
+  const { rows, totals } = data;
 
   return (
     <>
@@ -38,7 +41,7 @@ async function RecentReports() {
         <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
           {rows.map((r) => (
             <li key={r.id}>
-              <Link href={`/reports/${r.id}`} className="flex items-center justify-between py-3">
+              <Link href={`/reports/?id=${r.id}`} className="flex items-center justify-between py-3">
                 <span>
                   <span className="font-medium">{speciesLabel(r.species)}</span>
                   <span className="ml-2 text-sm text-zinc-500">
@@ -57,6 +60,19 @@ async function RecentReports() {
 }
 
 export default function Home() {
+  const [exporting, setExporting] = useState(false);
+
+  async function exportAll() {
+    setExporting(true);
+    try {
+      downloadCsv(await listReports());
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -65,13 +81,11 @@ export default function Home() {
           Log one
         </Link>
       </div>
-      <Suspense fallback={<p className="text-zinc-500">Loading…</p>}>
-        <RecentReports />
-      </Suspense>
+      <RecentReports />
       <p className="text-sm">
-        <a href="/api/export" className="underline">
-          Download all reports (CSV)
-        </a>
+        <button onClick={exportAll} disabled={exporting} className="underline disabled:opacity-50">
+          {exporting ? "Preparing…" : "Download all reports (CSV)"}
+        </button>
       </p>
     </div>
   );
