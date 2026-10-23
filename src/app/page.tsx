@@ -41,7 +41,7 @@ function RecentReports() {
         <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
           {rows.map((r) => (
             <li key={r.id}>
-              <Link href={`/reports/?id=${r.id}`} className="flex items-center justify-between py-3">
+              <Link href={`/reports/${r.id}`} className="flex items-center justify-between py-3">
                 <span>
                   <span className="font-medium">{speciesLabel(r.species)}</span>
                   <span className="ml-2 text-sm text-zinc-500">
