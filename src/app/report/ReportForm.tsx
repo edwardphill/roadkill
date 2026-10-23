@@ -79,7 +79,7 @@ export function ReportForm() {
         },
         user?.id ?? null,
       );
-      router.push(`/reports/?id=${id}`);
+      router.push(`/reports/${id}`);
     } catch (err) {
       setError((err as Error).message);
       setPending(false);

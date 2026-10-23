@@ -1,7 +1,6 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { RequireSignIn, useAuth } from "@/components/Auth";
 import { GuidanceCard } from "@/components/GuidanceCard";
 import { fmtDate, speciesLabel, STATUS_LABEL } from "@/lib/format";
@@ -11,9 +10,8 @@ import { getReport, markStatus } from "@/lib/store";
 import type { Claim, Report } from "@/lib/types";
 import { ClaimForm } from "./ClaimForm";
 
-// A static site can't have a page per report, so the id rides in the query string: /reports/?id=…
-function ReportDetail() {
-  const id = useSearchParams().get("id") ?? "";
+// Report data loads in the browser from Supabase (or localStorage in demo mode).
+export function ReportDetail({ id }: { id: string }) {
   const validId = /^[0-9a-f-]{36}$/i.test(id);
   const { user, canWrite } = useAuth();
   const [data, setData] = useState<{ report: Report; claim: Claim | null } | null | undefined>(undefined);
@@ -108,13 +106,5 @@ function ReportDetail() {
         </div>
       )}
     </div>
-  );
-}
-
-export default function ReportPage() {
-  return (
-    <Suspense fallback={<p className="text-zinc-500">Loading…</p>}>
-      <ReportDetail />
-    </Suspense>
   );
 }
